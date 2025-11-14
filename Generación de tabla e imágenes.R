@@ -22,8 +22,6 @@ sentinel_filtrado <- ee$ImageCollection("COPERNICUS/S5P/OFFL/L3_NO2")$
   filterDate(fecha_inicio, fecha_fin)
 
 df <- ee_get_date_ic(sentinel_filtrado)
-
-muestra <- sentinel$median()$clip(tacna)
 paleta <- list(
   min = 0,
   max = 0.00002,
