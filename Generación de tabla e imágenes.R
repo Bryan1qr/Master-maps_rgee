@@ -10,70 +10,74 @@ tacna <- ee$FeatureCollection("projects/ee-bryan1qr/assets/geometries/departamen
 
 # Verificando:
 Map$centerObject(eeObject = tacna, zoom = 7)
-Map$addLayer(eeObject = tacna, name = "Tacna")
+Map$addLayer(eeObject = tacna, name = "Tacna") +
+  Map$addLayer(eeObject = sent, visParams = paleta, name = "S")
 
 #* Carga de la colección de imagenes SENTINEL 5P:
 
 fecha_inicio <- ee$Date("2019-01-01T00:00:00Z")$advance(5, "hour")
-fecha_fin    <- ee$Date("2024-12-31T23:00:00Z")$advance(5, "hour")
+fecha_fin    <- ee$Date("2025-01-01T00:00:00Z")$advance(5, "hour")
 
 sentinel_filtrado <- ee$ImageCollection("COPERNICUS/S5P/OFFL/L3_NO2")$
   select("tropospheric_NO2_column_number_density")$
-  filterDate(fecha_inicio, fecha_fin)
+  filterDate(fecha_inicio, fecha_fin)$map(function(img) {
+  img$clip(tacna$geometry())
+})
 
-df <- ee_get_date_ic(sentinel_filtrado)
-paleta <- list(
-  min = 0,
-  max = 0.00002,
-  palette = c('black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red')
-)
-Map$centerObject(eeObject = tacna, zoom = 7)
-Map$addLayer(eeObject = no2_median_anual$first()$clip(tacna), visParams = paleta, name = "tropomi")
+# df <- ee_get_date_ic(sentinel_filtrado)
 
 
 # Calcular promedio areal por imagen sobre la zona de estudio
-promedios_areales <- sentinel_filtrado$
-  map(function(img) {
-    # Recortar la imagen al área de estudio
-    img_clip <- img$clip(tacna)
+promedios_areales <- sentinel_filtrado$map(ee_utils_pyfunc(function(img) {
 
-    # Reducir al promedio dentro del área
-    mean_dict <- img_clip$reduceRegion(
+  band <- "tropospheric_NO2_column_number_density"
+
+  img_clip <- img$clip(tacna)
+
+  tiene_banda <- img_clip$bandNames()$contains(band)
+
+  mean_value <- ee$Algorithms$If(
+    tiene_banda,
+    img_clip$select(band)$reduceRegion(
       reducer = ee$Reducer$mean(),
       geometry = tacna$geometry(),
       scale = 1113,
-      maxPixels = 1e13
-    )
+      bestEffort = TRUE,
+      maxPixels = 1e13,
+      tileScale = 2
+    )$get(band),
+    ee$Number(-9999)
+  )
 
-    # Obtener el valor medio (si existe)
-    mean_value <- ee$Number(mean_dict$get("tropospheric_NO2_column_number_density"))
+  mean_value <- ee$Number(ee$Algorithms$If(mean_value, mean_value, -9999))
 
-    # Crear el feature con control de NULL
-    return(
-      ee$Feature(NULL, list(
-        "system:index" = img$get("system:index"),
-        "fecha" = img$date()$format("YYYY-MM-dd"),
-        "NO2_mean" = ee$Algorithms$If(mean_value, mean_value, ee$Number(-9999))
-      ))
+  ee$Feature(
+    NULL,   # ← sin geometría
+    list(
+      "system:index" = img$get("system:index"),
+      "fecha"        = img$date()$format("YYYY-MM-dd"),
+      "NO2_mean"     = mean_value
     )
-  })
+  )
+}))
 
 # Crear la tabla final
-tabla_no2 <- ee$FeatureCollection(promedios_areales)
-
-tabla_no2_valid <- tabla_no2$
+tabla_no2 <- ee$FeatureCollection(promedios_areales)$
   filter(ee$Filter$gt("NO2_mean", 0))
+
+xd <- ee_as_sf(tabla_no2_sin_geom)
 
 task_table <- ee_table_to_drive(
   collection = tabla_no2,
-  description = "NO2_promedios_Tacna",
+  description = "table3",
   fileFormat = "CSV",
-  folder = "definitivo"
+  folder = "xd2"
 )
 task_table$start()
 
 ee_monitoring(task = task_table)
 
+exported_stats <- ee_drive_to_local(task = task_table,dsn = "table3.csv")
 
 df1 <- read.csv("NO2_promedios_Tacna_2025_11_11_22_19_51.csv")
 
@@ -119,7 +123,17 @@ for (year in anios) {
   print(paste("Exportando:", year))
 }
 
-df <- read.csv("NO2_promedios_Tacna_2025_11_11_22_19_51.csv")
+
+paleta <- list(
+  min = 0,
+  max = 0.00002,
+  palette = c('black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red')
+)
+Map$centerObject(eeObject = tacna, zoom = 7)
+Map$addLayer(eeObject = no2_median_anual$first()$clip(tacna), visParams = paleta, name = "tropomi")
+
+
+df <- read.csv("table1_2025_11_21_20_12_37.csv")
 
 df1 <- df %>% select(system.index, NO2_mean, fecha) %>%
   filter(NO2_mean >= 0)
