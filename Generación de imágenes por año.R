@@ -36,31 +36,6 @@ mediana_anual_fun <- ee_utils_pyfunc(function(y) {
 
 no2_median_anual <- ee$ImageCollection(ee$List(años)$map(mediana_anual_fun))
 
-#  Exportar cada imagen a Google Drive
-folder_drive <- "NO2_Tacna_Medianas"   # Cambia el nombre de la carpeta si deseas
-
-# Iterar sobre cada año y exportar
-for (year in años) {
-  image_year <- no2_median_anual$
-    filter(ee$Filter$eq("year", year))$
-    first()$
-    clip(tacna)
-
-  task <- ee$batch$Export$image$toDrive(
-    image = image_year,
-    description = paste0("NO2_median_", year),
-    folder = folder_drive,
-    fileNamePrefix = paste0("NO2_median_", year),
-    region = tacna$geometry(),
-    scale = 1113.2,              # escala original del Sentinel-5P
-    crs = "EPSG:4326",           # sistema de coordenadas global
-    maxPixels = 1e13
-  )
-  task$start()
-  print(paste("Exportando:", year))
-}
-
-
 paleta <- list(
   min = 0,
   max = 0.00002,
@@ -75,3 +50,70 @@ Map$addLayer(eeObject = no2_median_anual$first()$clip(tacna),
   Map$addLayer(eeObject = tacna$style(
     color = "white", fillColor = "#ffffff00", width = 0.5
   ), name = "Tacna")
+
+
+# Método 1:
+# Más eficiente:
+
+fechas <- ee$List(2019:2024)$map(ee_utils_pyfunc(function(i) ee$String(i)))
+
+img_multibands <- no2_median_anual$toBands()$
+  rename(fechas)$multiply(1e6)
+
+task2 <- ee_image_to_drive(
+  image = img_multibands,
+  description = "tropomi",
+  folder = "testxd",
+  region = tacna$geometry(), 
+  scale = 1113.2, 
+  crs = "EPSG:4326", 
+  maxPixels = 1e13
+)
+
+# O directamente en local:
+sent3 <- ee_as_rast(img_multibands, 
+  region = tacna$geometry(),
+   via = "drive",
+   container = "test3",
+  scale = 1113.2, 
+  crs = "EPSG:4326", 
+  maxPixels = 1e13)
+
+
+# Split de bandas:
+library(terra)
+d <- as.list(sent3)
+dir.create("raster2")
+bandas <- names(sent3)
+lapply(1:length(d), function(i) {
+  writeRaster(d[[i]],
+              filename = file.path("raster", paste0("no2_", bandas[i], ".tif")),
+              overwrite = TRUE)
+})
+
+
+
+# Opción2
+#  Exportar cada imagen a Google Drive
+folder_drive <- "NO2_Tacna"   # Cambia el nombre de la carpeta si deseas
+
+# Iterar sobre cada año y exportar
+for (year in años) {
+  image_year <- no2_median_anual$
+    filter(ee$Filter$eq("year", year))$
+    first()
+
+  task <- ee$batch$Export$image$toDrive(
+    image = image_year,
+    description = paste0("NO2_median_", year),
+    folder = folder_drive,
+    fileNamePrefix = paste0("NO2_median_", year),
+    region = tacna$geometry(),
+    scale = 1113.2,              # escala original del Sentinel-5P
+    crs = "EPSG:4326",           # sistema de coordenadas global
+    maxPixels = 1e13
+  )
+  task$start()
+  Sys.sleep(5)
+  print(paste("Exportando:", year))
+}
