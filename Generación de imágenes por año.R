@@ -63,7 +63,7 @@ img_multibands <- no2_median_anual$toBands()$
 task2 <- ee_image_to_drive(
   image = img_multibands,
   description = "tropomi",
-  folder = "MasterMap",
+  folder = "MasterMaps2025",
   region = tacna$geometry(), 
   scale = 1113.2, 
   crs = "EPSG:4326", 
