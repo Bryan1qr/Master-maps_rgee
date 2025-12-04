@@ -58,12 +58,12 @@ Map$addLayer(eeObject = no2_median_anual$first()$clip(tacna),
 fechas <- ee$List(2019:2024)$map(ee_utils_pyfunc(function(i) ee$String(i)))
 
 img_multibands <- no2_median_anual$toBands()$
-  rename(fechas)$multiply(1e6)
+  rename(fechas)$multiply(1e6) # renombrando y pasando a microgramos:
 
 task2 <- ee_image_to_drive(
   image = img_multibands,
   description = "tropomi",
-  folder = "testxd",
+  folder = "MasterMap",
   region = tacna$geometry(), 
   scale = 1113.2, 
   crs = "EPSG:4326", 
